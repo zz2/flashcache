@@ -46,10 +46,12 @@
 void
 usage(char *pname)
 {
-	fprintf(stderr, "Usage: %s [-v] [-p back|thru|around] [-w] [-b block size] [-m md block size] [-s cache size] [-a associativity] [-r rw_ration] cachedev ssd_devname disk_devname\n", pname);
+	fprintf(stderr, "Usage: %s [-v] [-p back|thru|around] [-w] [-b block size] [-m md block size] [-s cache size] [-a associativity] [-r rw_ration] [-l load_cache] cachedev ssd_devname disk_devname\n", pname);
 	fprintf(stderr, "Usage : %s Cache Mode back|thru|around is required argument\n",
 		pname);
 	fprintf(stderr, "Usage : %s Default units for -b, -m, -s are sectors, or specify in k/M/G. Default associativity is 512.\n",
+		pname);
+	fprintf(stderr, "Usage : %s load_cache 1|2|3. Default 2. cache persistence: cache_reload 1, cache_create 2, cache_forcecreate 3\n",
 		pname);
 #ifdef COMMIT_REV
 	fprintf(stderr, "git commit: %s\n", COMMIT_REV);
@@ -206,11 +208,12 @@ main(int argc, char **argv)
 	int disk_associativity = 0;
 	int ret;
 	int cache_mode = -1;
-    int rw_ration = 30;
+    int rw_ration = 0;
+    int load_cache = 2;
 	char *cache_mode_str;
 	
 	pname = argv[0];
-	while ((c = getopt(argc, argv, "fs:b:d:m:va:p:w:r:")) != -1) {
+	while ((c = getopt(argc, argv, "fs:b:d:m:va:p:w:r:l:")) != -1) {
 		switch (c) {
 		case 's':
 			cache_size = get_cache_size(optarg);
@@ -255,6 +258,9 @@ main(int argc, char **argv)
 		case 'r':
 	        rw_ration = strtoll(optarg, NULL, 0);
                         break;			
+		case 'l':
+	        load_cache = strtoll(optarg, NULL, 0);
+                        break;			
 		case '?':
 			usage(pname);
 		}
@@ -274,8 +280,8 @@ main(int argc, char **argv)
 	if (optind == argc)
 		usage(pname);
 	disk_devname = argv[optind];
-	printf("cachedev %s, ssd_devname %s, disk_devname %s cache mode %s, rw_ration: %d\n", 
-	       cachedev, ssd_devname, disk_devname, cache_mode_str, rw_ration);
+	printf("cachedev %s, ssd_devname %s, disk_devname %s cache mode %s, rw_ration: %d, load_cache: %d\n", 
+	       cachedev, ssd_devname, disk_devname, cache_mode_str, rw_ration, load_cache);
 	if (cache_mode == FLASHCACHE_WRITE_BACK)
 		printf("block_size %lu, md_block_size %lu, cache_size %lu\n", 
 		       block_size, md_block_size, cache_size);
@@ -362,11 +368,20 @@ main(int argc, char **argv)
 			ssd_devname, disk_devname);
 		check_sure();
 	}
-	sprintf(dmsetup_cmd, "echo 0 %lu flashcache %s %s %s %d 2 %lu %lu %d %lu %d %lu %d"
-		" | dmsetup create %s",
-		disk_devsize, disk_devname, ssd_devname, cachedev, cache_mode, block_size, 
-		cache_size, associativity, disk_associativity, write_cache_only, md_block_size, rw_ration,
-		cachedev);
+
+    if (rw_ration) {
+	    sprintf(dmsetup_cmd, "echo 0 %lu flashcache %s %s %s %d %d %lu %lu %d %lu %d %lu %d"
+		        " | dmsetup create %s",
+		        disk_devsize, disk_devname, ssd_devname, cachedev, cache_mode, load_cache, block_size, 
+		        cache_size, associativity, disk_associativity, write_cache_only, md_block_size, rw_ration,
+		        cachedev);
+    } else {
+        sprintf(dmsetup_cmd, "echo 0 %lu flashcache %s %s %s %d %d %lu %lu %d %lu %d %lu"
+		        " | dmsetup create %s",
+		        disk_devsize, disk_devname, ssd_devname, cachedev, cache_mode, load_cache, block_size, 
+		        cache_size, associativity, disk_associativity, write_cache_only, md_block_size,
+		        cachedev);
+    }
 
 	/* Go ahead and create the cache.
 	 * XXX - Should use the device mapper library for this.
