@@ -299,6 +299,8 @@ main(int argc, char **argv)
 			ssd_devname);
 		exit(1);		
 	}
+
+    /*
 	if (sb->cache_sb_state == CACHE_MD_STATE_DIRTY ||
 	    sb->cache_sb_state == CACHE_MD_STATE_CLEAN ||
 	    sb->cache_sb_state == CACHE_MD_STATE_FASTCLEAN ||
@@ -309,6 +311,7 @@ main(int argc, char **argv)
 			pname, ssd_devname);
 		exit(1);
 	}
+    */
 	disk_fd = open(disk_devname, O_RDONLY);
 	if (disk_fd < 0) {
 		fprintf(stderr, "%s: Failed to open %s\n", 
