@@ -76,6 +76,10 @@ extern struct list_head *_io_jobs;
 extern struct list_head *_md_io_jobs;
 extern struct list_head *_md_complete_jobs;
 
+/*for rw_ration*/
+atomic_t write_able;
+atomic_t read_able;
+
 struct flashcache_control_s {
 	unsigned long synch_flags;
 };
@@ -959,6 +963,7 @@ flashcache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 				r = -EINVAL;
 				goto bad3;
 			}
+            DMERR("zz2 goto init\n");
 			goto init; /* Skip reading cache parameters from command line */
 		}
 	} else
@@ -1241,10 +1246,17 @@ init:
 #endif
 	wake_up_bit(&flashcache_control->synch_flags, FLASHCACHE_UPDATE_LIST);
 
+    atomic_set(&read_able, (dmc->size * 50) / 100 + (dmc->size * 50) % 100);
+    atomic_set(&write_able, atomic_read(&read_able));
+            
+    /*DMERR("zz2 init1 size: %llu, read_able: %llu, write_able: %llu.", (long long unsigned)dmc->size, (long long unsigned)read_able, (long long unsigned)write_able); */
 	for (i = 0 ; i < dmc->size ; i++) {
 		dmc->cache[i].hash_prev = FLASHCACHE_NULL;
 		dmc->cache[i].hash_next = FLASHCACHE_NULL;
+		dmc->cache[i].rw = RW_NULL;
 		if (dmc->cache[i].cache_state & VALID) {
+		    dmc->cache[i].rw = RW_READ;
+            atomic_dec(&read_able);
 			flashcache_hash_insert(dmc, i);
 			atomic_inc(&dmc->cached_blocks);
 		}
@@ -1270,6 +1282,7 @@ init:
 
 	flashcache_ctr_procfs(dmc);
 
+    /*DMERR("zz2 init1 size: %llu, read_able: %llu, write_able: %llu.", (long long unsigned)dmc->size, (long long unsigned)read_able, (long long unsigned)write_able); */
 	return 0;
 
 bad3:

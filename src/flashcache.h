@@ -513,6 +513,12 @@ typedef u_int64_t sector_t;
 #define CACHE_MD_STATE_FASTCLEAN	0xcafefeed
 #define CACHE_MD_STATE_UNSTABLE		0xc8249756
 
+
+#define RW_NULL         0x0001
+#define RW_READ	        0x0002
+#define RW_WRITE        0x0004
+#define RW_READWRITE	0x0008
+
 /* Cache block metadata structure */
 struct cacheblock {
 	u_int16_t	cache_state;
@@ -525,6 +531,9 @@ struct cacheblock {
 #ifdef FLASHCACHE_DO_CHECKSUMS
 	u_int64_t 	checksum;
 #endif
+
+    //todo replace for min mem
+	u_int16_t rw; /* RW_NULL|RW_READ|RW_WRITE|RW_READWRITE */
 } __attribute__((packed));
 
 struct flash_superblock {

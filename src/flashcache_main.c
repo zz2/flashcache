@@ -93,6 +93,10 @@ static void flashcache_setlocks_multidrop(struct cache_c *dmc, struct bio *bio);
 extern struct work_struct _kcached_wq;
 extern u_int64_t size_hist[];
 
+/*for rw_ration*/
+extern atomic_t write_able;
+extern atomic_t read_able;
+
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,26)
 extern struct dm_kcopyd_client *flashcache_kcp_client; /* Kcopyd client for writing back data */
 #else
@@ -192,7 +196,7 @@ flashcache_clear_fallow(struct cache_c *dmc, int index)
 {
 	struct cacheblock *cacheblk = &dmc->cache[index];
 	int set = index / dmc->assoc;
-	
+
 	if (dmc->cache_mode != FLASHCACHE_WRITE_BACK)
 		return;
 	if (cacheblk->cache_state & FALLOW_DOCLEAN) {
@@ -200,8 +204,14 @@ flashcache_clear_fallow(struct cache_c *dmc, int index)
 			VERIFY(dmc->cache_sets[set].dirty_fallow > 0);
 			dmc->cache_sets[set].dirty_fallow--;
 		}
+
+        DMERR("zz2 fallow before, stat: %d, block %lu", 
+			      (int)cacheblk->cache_state, cacheblk->dbn);
 		cacheblk->cache_state &= ~FALLOW_DOCLEAN;
+        DMERR("zz2 fallow after, stat: %d, block %lu", 
+			      (int)cacheblk->cache_state, cacheblk->dbn);
 	}
+
 }
 
 void 
@@ -282,8 +292,9 @@ flashcache_io_callback(unsigned long error, void *context)
 			job->error = error = -EIO;
 			dmc->sysctl_error_inject &= ~READFILL_ERROR;
 		}
-		if (unlikely(error))
+		if (unlikely(error)) {
 			dmc->flashcache_errors.ssd_write_errors++;
+        }
 		VERIFY(cacheblk->cache_state & DISKREADINPROG);
 		spin_unlock_irqrestore(&cache_set->set_spin_lock, flags);
 		break;
@@ -1107,6 +1118,10 @@ flashcache_dirty_writeback(struct cache_c *dmc, int index)
 		atomic_inc(&dmc->nr_jobs);
 		dmc->flashcache_stats.ssd_reads++;
 		dmc->flashcache_stats.disk_writes++;
+
+		/*DMERR("zz2 clean, size:%d, write_able: %d, read_able: %d, rw: %d, stat: %d, block %lu", */
+				  /*(int)dmc->size, (int)atomic_read(&write_able), (int)atomic_read(&read_able), (int)cacheblk->rw, (int)cacheblk->cache_state, cacheblk->dbn);*/
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,26)
 		kcopyd_copy(flashcache_kcp_client, &job->job_io_regions.cache, 1, &job->job_io_regions.disk, 0, 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,25)
@@ -1534,8 +1549,19 @@ flashcache_read(struct cache_c *dmc, struct bio *bio)
 	dmc->cache[index].cache_state = VALID | DISKREADINPROG;
 	dmc->cache[index].dbn = bio->bi_sector;
 	flashcache_hash_insert(dmc, index);
-	flashcache_setlocks_multidrop(dmc, bio);
 
+    if (dmc->cache[index].rw == RW_READ) {
+            atomic_inc(&read_able);
+    }
+    if (dmc->cache[index].rw == RW_WRITE) {
+            atomic_inc(&write_able);
+    } 
+    dmc->cache[index].rw = RW_READ;
+    atomic_dec(&read_able);
+
+    DMERR("zz2 read size: %llu, read_able: %llu, write_able: %llu.", (long long unsigned)dmc->size, (long long unsigned)atomic_read(&read_able), (long long unsigned)atomic_read(&write_able)); 
+
+	flashcache_setlocks_multidrop(dmc, bio);
 	DPRINTK("Cache read: Block %llu(%lu), index = %d:%s",
 		bio->bi_sector, bio->bi_size, index, "CACHE MISS & REPLACE");
 	flashcache_read_miss(dmc, bio, index);
@@ -1871,8 +1897,20 @@ flashcache_write_miss(struct cache_c *dmc, struct bio *bio, int index)
 	} else
 		atomic_inc(&dmc->cached_blocks);
 	cacheblk->cache_state = VALID | CACHEWRITEINPROG;
-	cacheblk->dbn = bio->bi_sector;
+    cacheblk->dbn = bio->bi_sector;
 	flashcache_hash_insert(dmc, index);
+
+    if (cacheblk->rw == RW_READ) {
+            atomic_inc(&read_able);
+    }
+    if (cacheblk->rw == RW_WRITE) {
+            atomic_inc(&write_able);
+    } 
+    cacheblk->rw = RW_WRITE;
+    atomic_dec(&write_able);
+
+    DMERR("zz2 write size: %llu, read_able: %llu, write_able: %llu.", (long long unsigned)dmc->size, (long long unsigned)atomic_read(&read_able), (long long unsigned)atomic_read(&write_able)); 
+
 	flashcache_setlocks_multidrop(dmc, bio);
 	job = new_kcached_job(dmc, bio, index);
 	if (unlikely(dmc->sysctl_error_inject & WRITE_MISS_JOB_ALLOC_FAIL)) {
@@ -2088,7 +2126,14 @@ flashcache_map(struct dm_target *ti, struct bio *bio)
 	int queued;
 	int uncacheable;
 	unsigned long flags;
-	
+
+    /*DMERR("zz2 cache_devname: %s, write_able: %llu, sizeof cacheblk: %d, sizeof uint16: %d\n", dmc->cache_devname, (long long unsigned)write_able, (int)sizeof(struct cacheblock), (int)sizeof(u_int16_t));*/
+    /*DMERR("zz2 map size: %llu, read_able: %llu, write_able: %llu.", (long long unsigned)dmc->size, (long long unsigned)atomic_read(&read_able), (long long unsigned)atomic_read(&write_able)); */
+
+	VERIFY(atomic_read(&read_able) <  0);
+	VERIFY(atomic_read(&read_able) >= 0);
+	VERIFY(atomic_read(&write_able) >= 0);
+
 	if (sectors <= 32)
 		size_hist[sectors]++;
 
@@ -2120,6 +2165,19 @@ flashcache_map(struct dm_target *ti, struct bio *bio)
 			((dmc->cache_mode == FLASHCACHE_WRITE_AROUND) ||
 			 flashcache_uncacheable(dmc, bio))));
 	spin_unlock_irqrestore(&dmc->ioctl_lock, flags);
+        
+    if (bio_data_dir(bio) == READ) {
+        if (atomic_read(&read_able) <= 0) {
+            uncacheable = 1;
+        }
+    }
+
+    if (bio_data_dir(bio) == WRITE) {
+        if (atomic_read(&write_able) <= 0) {
+            uncacheable = 1;
+        }
+    }
+
 	if (uncacheable) {
 		flashcache_setlocks_multiget(dmc, bio);
 		queued = flashcache_inval_blocks(dmc, bio);
