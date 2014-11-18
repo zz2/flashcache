@@ -96,6 +96,7 @@ extern u_int64_t size_hist[];
 /*for rw_ration*/
 extern atomic_t write_able;
 extern atomic_t read_able;
+extern int use_rw_ration;
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,26)
 extern struct dm_kcopyd_client *flashcache_kcp_client; /* Kcopyd client for writing back data */
@@ -2130,9 +2131,6 @@ flashcache_map(struct dm_target *ti, struct bio *bio)
     /*DMERR("zz2 cache_devname: %s, write_able: %llu, sizeof cacheblk: %d, sizeof uint16: %d\n", dmc->cache_devname, (long long unsigned)write_able, (int)sizeof(struct cacheblock), (int)sizeof(u_int16_t));*/
     /*DMERR("zz2 map size: %llu, read_able: %llu, write_able: %llu.", (long long unsigned)dmc->size, (long long unsigned)atomic_read(&read_able), (long long unsigned)atomic_read(&write_able)); */
 
-	VERIFY(atomic_read(&read_able) <  0);
-	VERIFY(atomic_read(&read_able) >= 0);
-	VERIFY(atomic_read(&write_able) >= 0);
 
 	if (sectors <= 32)
 		size_hist[sectors]++;
@@ -2165,16 +2163,20 @@ flashcache_map(struct dm_target *ti, struct bio *bio)
 			((dmc->cache_mode == FLASHCACHE_WRITE_AROUND) ||
 			 flashcache_uncacheable(dmc, bio))));
 	spin_unlock_irqrestore(&dmc->ioctl_lock, flags);
-        
-    if (bio_data_dir(bio) == READ) {
-        if (atomic_read(&read_able) <= 0) {
-            uncacheable = 1;
-        }
-    }
 
-    if (bio_data_dir(bio) == WRITE) {
-        if (atomic_read(&write_able) <= 0) {
-            uncacheable = 1;
+    if (use_rw_ration) {
+	    VERIFY(atomic_read(&read_able) >= 0);
+	    VERIFY(atomic_read(&write_able) >= 0);
+        if (bio_data_dir(bio) == READ) {
+            if (atomic_read(&read_able) <= 0) {
+                uncacheable = 1;
+            }
+        }
+
+        if (bio_data_dir(bio) == WRITE) {
+            if (atomic_read(&write_able) <= 0) {
+                uncacheable = 1;
+            }
         }
     }
 

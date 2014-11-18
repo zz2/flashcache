@@ -46,7 +46,7 @@
 void
 usage(char *pname)
 {
-	fprintf(stderr, "Usage: %s [-v] [-p back|thru|around] [-w] [-b block size] [-m md block size] [-s cache size] [-a associativity] cachedev ssd_devname disk_devname\n", pname);
+	fprintf(stderr, "Usage: %s [-v] [-p back|thru|around] [-w] [-b block size] [-m md block size] [-s cache size] [-a associativity] [-r rw_ration] cachedev ssd_devname disk_devname\n", pname);
 	fprintf(stderr, "Usage : %s Cache Mode back|thru|around is required argument\n",
 		pname);
 	fprintf(stderr, "Usage : %s Default units for -b, -m, -s are sectors, or specify in k/M/G. Default associativity is 512.\n",
@@ -206,10 +206,11 @@ main(int argc, char **argv)
 	int disk_associativity = 0;
 	int ret;
 	int cache_mode = -1;
+    int rw_ration = 30;
 	char *cache_mode_str;
 	
 	pname = argv[0];
-	while ((c = getopt(argc, argv, "fs:b:d:m:va:p:w")) != -1) {
+	while ((c = getopt(argc, argv, "fs:b:d:m:va:p:w:r:")) != -1) {
 		switch (c) {
 		case 's':
 			cache_size = get_cache_size(optarg);
@@ -251,6 +252,9 @@ main(int argc, char **argv)
 		case 'w':
 			write_cache_only = 1;
                         break;			
+		case 'r':
+	        rw_ration = strtoll(optarg, NULL, 0);
+                        break;			
 		case '?':
 			usage(pname);
 		}
@@ -270,8 +274,8 @@ main(int argc, char **argv)
 	if (optind == argc)
 		usage(pname);
 	disk_devname = argv[optind];
-	printf("cachedev %s, ssd_devname %s, disk_devname %s cache mode %s\n", 
-	       cachedev, ssd_devname, disk_devname, cache_mode_str);
+	printf("cachedev %s, ssd_devname %s, disk_devname %s cache mode %s, rw_ration: %d\n", 
+	       cachedev, ssd_devname, disk_devname, cache_mode_str, rw_ration);
 	if (cache_mode == FLASHCACHE_WRITE_BACK)
 		printf("block_size %lu, md_block_size %lu, cache_size %lu\n", 
 		       block_size, md_block_size, cache_size);
@@ -358,10 +362,10 @@ main(int argc, char **argv)
 			ssd_devname, disk_devname);
 		check_sure();
 	}
-	sprintf(dmsetup_cmd, "echo 0 %lu flashcache %s %s %s %d 2 %lu %lu %d %lu %d %lu"
+	sprintf(dmsetup_cmd, "echo 0 %lu flashcache %s %s %s %d 2 %lu %lu %d %lu %d %lu %d"
 		" | dmsetup create %s",
 		disk_devsize, disk_devname, ssd_devname, cachedev, cache_mode, block_size, 
-		cache_size, associativity, disk_associativity, write_cache_only, md_block_size,
+		cache_size, associativity, disk_associativity, write_cache_only, md_block_size, rw_ration,
 		cachedev);
 
 	/* Go ahead and create the cache.

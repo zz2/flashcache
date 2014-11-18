@@ -79,6 +79,7 @@ extern struct list_head *_md_complete_jobs;
 /*for rw_ration*/
 atomic_t write_able;
 atomic_t read_able;
+int use_rw_ration = 0;
 
 struct flashcache_control_s {
 	unsigned long synch_flags;
@@ -884,6 +885,7 @@ flashcache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	sector_t i, order;
 	int r = -EINVAL;
 	int persistence = 0;
+    int rw_ration = 30;
 	
 	if (argc < 3) {
 		ti->error = "flashcache: Need at least 3 arguments";
@@ -1093,6 +1095,15 @@ flashcache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 			r = -EINVAL;
 			goto bad3;
 		}
+
+        if (argc >= 12) {
+            use_rw_ration = 1;
+			if (sscanf(argv[11], "%d", &rw_ration) != 1) {
+				ti->error = "flashcache: Invalid rw_ration";
+				r = -EINVAL;
+				goto bad3;
+		    }
+        }
 	}
 
 	if (dmc->cache_mode == FLASHCACHE_WRITE_BACK) {	
@@ -1246,8 +1257,8 @@ init:
 #endif
 	wake_up_bit(&flashcache_control->synch_flags, FLASHCACHE_UPDATE_LIST);
 
-    atomic_set(&read_able, (dmc->size * 50) / 100 + (dmc->size * 50) % 100);
-    atomic_set(&write_able, atomic_read(&read_able));
+    atomic_set(&read_able, (dmc->size * rw_ration) / 100 + (dmc->size * rw_ration) % 100);
+    atomic_set(&write_able, dmc->size - atomic_read(&read_able));
             
     /*DMERR("zz2 init1 size: %llu, read_able: %llu, write_able: %llu.", (long long unsigned)dmc->size, (long long unsigned)read_able, (long long unsigned)write_able); */
 	for (i = 0 ; i < dmc->size ; i++) {
