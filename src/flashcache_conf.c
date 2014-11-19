@@ -81,6 +81,9 @@ atomic_t write_able;
 atomic_t read_able;
 int use_rw_ration = 0;
 
+/*for write numbers*/
+unsigned long stats_flag = 0;
+
 struct flashcache_control_s {
 	unsigned long synch_flags;
 };
@@ -1288,9 +1291,10 @@ init:
 	dmc->whitelist_tail = NULL;
 	dmc->blacklist_head = NULL;
 	dmc->blacklist_tail = NULL;
-	dmc->num_whitelist_pids = 0;
-	dmc->num_blacklist_pids = 0;
+    dmc->num_whitelist_pids = 0;
+    dmc->num_blacklist_pids = 0;
 
+    get_random_bytes(&stats_flag, sizeof(stats_flag));
 	flashcache_ctr_procfs(dmc);
 
     /*DMERR("zz2 init1 size: %llu, read_able: %llu, write_able: %llu.", (long long unsigned)dmc->size, (long long unsigned)read_able, (long long unsigned)write_able); */

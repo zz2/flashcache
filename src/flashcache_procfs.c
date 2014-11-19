@@ -990,6 +990,37 @@ static struct file_operations flashcache_stats_operations = {
 };
 
 static int 
+flashcache_stats_flag_show(struct seq_file *seq, void *v)
+{
+    /*unsigned long stats_flag;*/
+    /*get_random_bytes(&stats_flag, sizeof(stats_flag));*/
+
+    extern unsigned long stats_flag;
+
+    /*return random();*/
+	seq_printf(seq, "%lu\n", stats_flag);
+	return 0;
+}
+
+static int 
+flashcache_stats_flag_open(struct inode *inode, struct file *file)
+{
+	#if LINUX_VERSION_CODE < KERNEL_VERSION(3,10,0)
+		return single_open(file, &flashcache_stats_flag_show, PDE(inode)->data);	
+	#endif
+	#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,0)
+		return single_open(file, &flashcache_stats_flag_show, PDE_DATA(inode));
+	#endif
+}
+
+static struct file_operations flashcache_stats_flag_operations = {
+	.open		= flashcache_stats_flag_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+
+static int 
 flashcache_errors_show(struct seq_file *seq, void *v)
 {
 	struct cache_c *dmc = seq->private;
@@ -1058,9 +1089,9 @@ flashcache_pidlists_show(struct seq_file *seq, void *v)
 {
 	struct cache_c *dmc = seq->private;
 	struct flashcache_cachectl_pid *pid_list;
-	unsigned long flags;
+	unsigned long flag;
 
-	spin_lock_irqsave(&dmc->ioctl_lock, flags);
+	spin_lock_irqsave(&dmc->ioctl_lock, flag);
 	seq_printf(seq, "Blacklist: ");
 	pid_list = dmc->blacklist_head;
 	while (pid_list != NULL) {
@@ -1075,7 +1106,7 @@ flashcache_pidlists_show(struct seq_file *seq, void *v)
 		pid_list = pid_list->next;
 	}
 	seq_printf(seq, "\n");
-	spin_unlock_irqrestore(&dmc->ioctl_lock, flags);
+	spin_unlock_irqrestore(&dmc->ioctl_lock, flag);
 	return 0;
 }
 
@@ -1226,6 +1257,19 @@ flashcache_ctr_procfs(struct cache_c *dmc)
 	#endif
 	kfree(s);
 
+	s = flashcache_cons_procfs_cachename(dmc, "flashcache_stats_flag");
+	#if LINUX_VERSION_CODE < KERNEL_VERSION(3,10,0)
+		entry = create_proc_entry(s, 0, NULL);
+		if (entry) {
+			entry->proc_fops =  &flashcache_stats_flag_operations;
+			entry->data = dmc;
+		}
+	#endif
+	#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,0)
+		entry = proc_create_data(s, 0, NULL, &flashcache_stats_flag_operations, dmc);
+	#endif
+	kfree(s);
+
 	s = flashcache_cons_procfs_cachename(dmc, "flashcache_errors");
 	#if LINUX_VERSION_CODE < KERNEL_VERSION(3,10,0)
 		entry = create_proc_entry(s, 0, NULL);
@@ -1277,6 +1321,10 @@ flashcache_dtr_procfs(struct cache_c *dmc)
 	char *s;
 	
 	s = flashcache_cons_procfs_cachename(dmc, "flashcache_stats");
+	remove_proc_entry(s, NULL);
+	kfree(s);
+
+	s = flashcache_cons_procfs_cachename(dmc, "flashcache_stats_flag");
 	remove_proc_entry(s, NULL);
 	kfree(s);
 
